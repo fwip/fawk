@@ -324,8 +324,9 @@ func lexRule(l *lexer) stateFn {
 		l.emit('}')
 		return lexPattern
 
-	case ';':
-		l.emit(';')
+	// Simple single-char tokens
+	case ';', '?', ':', ',':
+		l.emit(itemType(r))
 
 	case '#':
 		l.consumeUntil("\n")

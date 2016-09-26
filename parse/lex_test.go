@@ -10,6 +10,7 @@ var shouldLex = [...]string{
 	` { " Hi I'm \" georigiono" } `,
 	`NF%2 == 1`,
 	`BEGIN {OFS="\t"} {x+=$3} END{print x}`,
+	`{ $2 = $3 == 4 ? "true" : 0 }`,
 }
 
 func lexes(s string, t *testing.T) {
