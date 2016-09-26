@@ -38,30 +38,30 @@ func (i item) String() string {
 type itemType int
 
 const (
-	itemError itemType = iota // error occurred; value is text of error
-	itemEOF
-	itemBool         // boolean constant
-	itemChar         // printable ASCII character; grab bag for comma etc.
-	itemCharConstant // character constant
-	itemComplex      // complex constant (1+2i); imaginary is just a number
-	itemColonEquals  // colon-equals (':=') introducing a declaration
-	itemField        // alphanumeric identifier starting with '$'
-	itemIdentifier   // alphanumeric identifier not starting with '$'
-	itemLeftDelim    // left action delimiter
-	itemLeftParen    // '(' inside action
-	itemNumber       // simple number, including imaginary
-	itemPipe         // pipe symbol
-	itemRawString    // raw quoted string (includes quotes)
-	itemRightDelim   // right action delimiter
-	itemRightParen   // ')' inside action
-	itemSpace        // run of spaces separating arguments
-	itemString       // quoted string (includes quotes)
-	itemText         // plain text
-	itemVariable     // variable starting with '$', such as '$' or  '$1' or '$hello'
-	itemRegex        // regex surrounded by `/`
-	itemOperator     // catchall for <=, +, >>, etc
-	itemQuote        // A quoted string
-	itemComment      // A comment, starting with '#'
+	itemEOF          itemType = iota
+	itemError                 // error occurred; value is text of error
+	itemBool                  // boolean constant
+	itemChar                  // printable ASCII character; grab bag for comma etc.
+	itemCharConstant          // character constant
+	itemComplex               // complex constant (1+2i); imaginary is just a number
+	itemColonEquals           // colon-equals (':=') introducing a declaration
+	itemField                 // alphanumeric identifier starting with '$'
+	itemIdentifier            // alphanumeric identifier not starting with '$'
+	itemLeftDelim             // left action delimiter
+	itemLeftParen             // '(' inside action
+	itemNumber                // simple number, including imaginary
+	itemPipe                  // pipe symbol
+	itemRawString             // raw quoted string (includes quotes)
+	itemRightDelim            // right action delimiter
+	itemRightParen            // ')' inside action
+	itemSpace                 // run of spaces separating arguments
+	itemString                // quoted string (includes quotes)
+	itemText                  // plain text
+	itemVariable              // variable starting with '$', such as '$' or  '$1' or '$hello'
+	itemRegex                 // regex surrounded by `/`
+	itemOperator              // catchall for <=, +, >>, etc
+	itemQuote                 // A quoted string
+	itemComment               // A comment, starting with '#'
 	// Keywords appear after all the rest.
 	itemKeyword          // used only to delimit the keywords
 	itemBlock            // block keyword
@@ -246,6 +246,7 @@ func (l *lexer) run() {
 		l.state = l.state(l)
 	}
 	l.emit(NEWLINE)
+	l.emit(itemEOF)
 	close(l.items)
 }
 
