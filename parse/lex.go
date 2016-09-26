@@ -15,18 +15,18 @@ type Pos int
 
 // item represents a token or text string returned from the scanner.
 type item struct {
-	typ itemType // The type of this item.
-	pos Pos      // The starting position, in bytes, of this item in the input string.
-	val string   // The value of this item.
+	yys int    // The type of this item.
+	pos Pos    // The starting position, in bytes, of this item in the input string.
+	val string // The value of this item.
 }
 
 func (i item) String() string {
 	switch {
-	case i.typ == itemEOF:
+	case i.yys == int(itemEOF):
 		return "EOF"
-	case i.typ == itemError:
+	case i.yys == int(itemError):
 		return i.val
-	case i.typ > itemKeyword:
+	case i.yys > int(itemKeyword):
 		return fmt.Sprintf("<%s>", i.val)
 	case len(i.val) > 10:
 		return fmt.Sprintf("%.10q...", i.val)
@@ -38,43 +38,44 @@ func (i item) String() string {
 type itemType int
 
 const (
-	itemError        itemType = iota // error occurred; value is text of error
-	itemBool                         // boolean constant
-	itemChar                         // printable ASCII character; grab bag for comma etc.
-	itemCharConstant                 // character constant
-	itemComplex                      // complex constant (1+2i); imaginary is just a number
-	itemColonEquals                  // colon-equals (':=') introducing a declaration
+	itemError itemType = iota // error occurred; value is text of error
 	itemEOF
-	itemField      // alphanumeric identifier starting with '$'
-	itemIdentifier // alphanumeric identifier not starting with '$'
-	itemLeftDelim  // left action delimiter
-	itemLeftParen  // '(' inside action
-	itemNumber     // simple number, including imaginary
-	itemPipe       // pipe symbol
-	itemRawString  // raw quoted string (includes quotes)
-	itemRightDelim // right action delimiter
-	itemRightParen // ')' inside action
-	itemSpace      // run of spaces separating arguments
-	itemString     // quoted string (includes quotes)
-	itemText       // plain text
-	itemVariable   // variable starting with '$', such as '$' or  '$1' or '$hello'
-	itemRegex      // regex surrounded by `/`
-	itemOperator   // catchall for <=, +, >>, etc
-	itemQuote      // A quoted string
+	itemBool         // boolean constant
+	itemChar         // printable ASCII character; grab bag for comma etc.
+	itemCharConstant // character constant
+	itemComplex      // complex constant (1+2i); imaginary is just a number
+	itemColonEquals  // colon-equals (':=') introducing a declaration
+	itemField        // alphanumeric identifier starting with '$'
+	itemIdentifier   // alphanumeric identifier not starting with '$'
+	itemLeftDelim    // left action delimiter
+	itemLeftParen    // '(' inside action
+	itemNumber       // simple number, including imaginary
+	itemPipe         // pipe symbol
+	itemRawString    // raw quoted string (includes quotes)
+	itemRightDelim   // right action delimiter
+	itemRightParen   // ')' inside action
+	itemSpace        // run of spaces separating arguments
+	itemString       // quoted string (includes quotes)
+	itemText         // plain text
+	itemVariable     // variable starting with '$', such as '$' or  '$1' or '$hello'
+	itemRegex        // regex surrounded by `/`
+	itemOperator     // catchall for <=, +, >>, etc
+	itemQuote        // A quoted string
+	itemComment      // A comment, starting with '#'
 	// Keywords appear after all the rest.
-	itemKeyword  // used only to delimit the keywords
-	itemBlock    // block keyword
-	itemDot      // the cursor, spelled '.'
-	itemDefine   // define keyword
-	itemElse     // else keyword
-	itemIf       // if keyword
-	itemNil      // the untyped nil constant, easiest to treat as a keyword
-	itemRange    // range keyword
-	itemTemplate // template keyword
-	itemWith     // with keyword
-	itemPrint    // print function  TODO: Should maybe be not keyword?
-	itemBegin    // BEGIN condition
-	itemEnd      // END condition
+	itemKeyword          // used only to delimit the keywords
+	itemBlock            // block keyword
+	itemDot              // the cursor, spelled '.'
+	itemDefine           // define keyword
+	itemElse             // else keyword
+	itemIf               // if keyword
+	itemNil              // the untyped nil constant, easiest to treat as a keyword
+	itemRange            // range keyword
+	itemTemplate         // template keyword
+	itemWith             // with keyword
+	itemPrint    = Print // print function  TODO: Should maybe be not keyword?
+	itemBegin    = Begin // BEGIN condition
+	itemEnd      = End   // END condition
 )
 
 var key = map[string]itemType{
@@ -153,7 +154,7 @@ func (l *lexer) backup() {
 
 // emit passes an item back to the client.
 func (l *lexer) emit(t itemType) {
-	l.items <- item{t, l.start, l.input[l.start:l.pos]}
+	l.items <- item{int(t), l.start, l.input[l.start:l.pos]}
 	l.start = l.pos
 }
 
@@ -198,16 +199,28 @@ func (l *lexer) lineNumber() int {
 // errorf returns an error token and terminates the scan by passing
 // back a nil pointer that will be the next state, terminating l.nextItem.
 func (l *lexer) errorf(format string, args ...interface{}) stateFn {
-	l.items <- item{itemError, l.start, fmt.Sprintf(format, args...)}
+	l.items <- item{int(itemError), l.start, fmt.Sprintf(format, args...)}
 	return nil
 }
 
 // nextItem returns the next item from the input.
 // Called by the parser, not in the lexing goroutine.
 func (l *lexer) nextItem() item {
-	item := <-l.items
-	l.lastPos = item.pos
-	return item
+	it, ok := <-l.items
+	if !ok {
+		return item{0, l.pos, "EOF"}
+	}
+	l.lastPos = it.pos
+	return it
+}
+
+type yySymType item
+
+// Required by yacc
+func (l *lexer) Lex(lval *yySymType) int {
+	it := yySymType(l.nextItem())
+	lval = &it
+	return int(it.yys)
 }
 
 // drain drains the output so the lexing goroutine will exit.
@@ -232,7 +245,7 @@ func (l *lexer) run() {
 	for l.state = lexPattern; l.state != nil; {
 		l.state = l.state(l)
 	}
-	l.emit(itemEOF)
+	l.emit(NEWLINE)
 	close(l.items)
 }
 
@@ -254,19 +267,24 @@ const (
 
 func lexPattern(l *lexer) stateFn {
 	r := l.next()
-	switch {
-	case isSpace(r):
+	if isSpace(r) {
 		l.ignore()
-	case r == '{':
-		l.emit(itemLeftDelim)
+		return lexPattern
+	}
+	switch r {
+	case '{':
+		l.emit('{')
 		return lexRule
-	case r == eof:
+	case eof:
 		return nil
 		//case isAlphaNumeric(r):
 		//l.backup()
 		//return lexIdentifier
-	case r == '/':
+	case '/':
 		return l.tilNilThen(lexRegex, lexPattern)
+
+	case '\n':
+		l.emit(NEWLINE)
 	}
 	return lexPattern
 }
@@ -293,11 +311,19 @@ func lexRule(l *lexer) stateFn {
 		l.emit(itemQuote)
 
 	case '}':
-		l.emit(itemRightDelim)
+		l.emit('}')
 		return lexPattern
 
 	case ';':
-		l.emit(itemChar)
+		l.emit(';')
+
+	case '#':
+		l.consumeUntil("\n")
+		l.backup()
+		l.emit(itemComment)
+
+	case '\n':
+		l.emit(NEWLINE)
 
 	case eof:
 		return nil
@@ -750,4 +776,8 @@ func isEndOfLine(r rune) bool {
 // isAlphaNumeric reports whether r is an alphabetic, digit, or underscore.
 func isAlphaNumeric(r rune) bool {
 	return r == '_' || unicode.IsLetter(r) || unicode.IsDigit(r)
+}
+
+func (l *lexer) Error(s string) {
+	fmt.Println(s)
 }
