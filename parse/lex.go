@@ -240,15 +240,6 @@ func (l *lexer) nextItem() item {
 	return it
 }
 
-type yySymType item
-
-// Required by yacc
-func (l *lexer) Lex(lval *yySymType) int {
-	it := yySymType(l.nextItem())
-	lval = &it
-	return int(it.yys)
-}
-
 // drain drains the output so the lexing goroutine will exit.
 // Called by the parser, not in the lexing goroutine.
 func (l *lexer) drain() {

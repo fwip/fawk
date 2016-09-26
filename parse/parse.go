@@ -4,6 +4,13 @@ package parse
 import __yyfmt__ "fmt"
 
 //line parse.y:2
+//line parse.y:6
+type yySymType struct {
+	yys int
+	pos Pos    // The starting position, in bytes, of this item in the input string.
+	val string // The value of this item.
+}
+
 const NAME = 57346
 const NUMBER = 57347
 const STRING = 57348
@@ -121,12 +128,19 @@ const yyEofCode = 1
 const yyErrCode = 2
 const yyInitialStackSize = 16
 
-//line parse.y:382
+//line parse.y:387
 
 func parse(s string) {
 	l := lex(s)
 	yyErrorVerbose = true
 	yyParse(l)
+}
+
+// Required by yacc
+func (l *lexer) Lex(lval *yySymType) int {
+	it := yySymType(l.nextItem())
+	lval = &it
+	return int(it.yys)
 }
 
 //line yacctab:1

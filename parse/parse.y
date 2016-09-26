@@ -3,6 +3,11 @@ package parse
 
 %}
 
+%union {
+	pos Pos    // The starting position, in bytes, of this item in the input string.
+	val string // The value of this item.
+}
+
 %token NAME NUMBER STRING ERE
 %token FUNC_NAME   /* Name followed by '(' without white space. */
 
@@ -385,4 +390,11 @@ func parse(s string){
   l := lex(s)
   yyErrorVerbose = true
   yyParse(l)
+}
+
+// Required by yacc
+func (l *lexer) Lex(lval *yySymType) int {
+	it := yySymType(l.nextItem())
+	lval = &it
+	return int(it.yys)
 }
