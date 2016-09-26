@@ -18,5 +18,6 @@ func TestIt(t *testing.T) {
 	logLex(` /Err\/die/ `)
 	logLex(` { x += $2; $3 = $1>>2 ; print } `)
 	logLex(` { " Hi I'm \" georigiono" } `)
+	logLex(`NF%2 == 1`)
 	fmt.Println("done")
 }

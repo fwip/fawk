@@ -62,6 +62,7 @@ const (
 	itemOperator              // catchall for <=, +, >>, etc
 	itemQuote                 // A quoted string
 	itemComment               // A comment, starting with '#'
+	itemBuiltinFunc           // A built-in function
 	// Keywords appear after all the rest.
 	itemKeyword          // used only to delimit the keywords
 	itemBlock            // block keyword
@@ -91,6 +92,30 @@ var key = map[string]itemType{
 	"print":    itemPrint,
 	"BEGIN":    itemBegin,
 	"END":      itemEnd,
+}
+
+var builtinFuncs = map[string]int{
+	"atan2":   0,
+	"close":   0,
+	"cos":     0,
+	"exp":     0,
+	"gsub":    0,
+	"index":   0,
+	"int":     0,
+	"length":  0,
+	"log":     0,
+	"match":   0,
+	"rand":    0,
+	"sin":     0,
+	"split":   0,
+	"sprintf": 0,
+	"sqrt":    0,
+	"srand":   0,
+	"sub":     0,
+	"substr":  0,
+	"system":  0,
+	"tolower": 0,
+	"toupper": 0,
 }
 
 const eof = -1
@@ -154,6 +179,7 @@ func (l *lexer) backup() {
 
 // emit passes an item back to the client.
 func (l *lexer) emit(t itemType) {
+	fmt.Println("emit:", t, l.start, l.input[l.start:l.pos])
 	l.items <- item{int(t), l.start, l.input[l.start:l.pos]}
 	l.start = l.pos
 }
@@ -242,7 +268,7 @@ func lex(input string) *lexer {
 
 // run runs the state machine for the lexer.
 func (l *lexer) run() {
-	for l.state = lexPattern; l.state != nil; {
+	for l.state = lexRule; l.state != nil; {
 		l.state = l.state(l)
 	}
 	l.emit(NEWLINE)
@@ -311,9 +337,10 @@ func lexRule(l *lexer) stateFn {
 		l.consumeUntil(`"`)
 		l.emit(itemQuote)
 
+	case '{':
+		l.emit('{')
 	case '}':
 		l.emit('}')
-		return lexPattern
 
 	case ';':
 		l.emit(';')
@@ -333,17 +360,68 @@ func lexRule(l *lexer) stateFn {
 		l.acceptAlphaNumeric()
 		l.emit(itemField)
 
-	// TODO: Does this need broken up?
-	case '+', '-', '*', '/', '%', '^':
-		l.accept("-+=")
-		l.emit(itemOperator)
+	case '%':
+		l.emit2Char(map[rune]itemType{
+			'=': MOD_ASSIGN,
+		})
+	case '+':
+		l.emit2Char(map[rune]itemType{
+			'+': INCR,
+			'=': ADD_ASSIGN,
+		})
+	case '-':
+		l.emit2Char(map[rune]itemType{
+			'-': DECR,
+			'=': SUB_ASSIGN,
+		})
+
+	case '*':
+		l.emit2Char(map[rune]itemType{
+			'=': MUL_ASSIGN,
+		})
+
+	case '/':
+		l.emit2Char(map[rune]itemType{
+			'=': DIV_ASSIGN,
+		})
+
+	case '^':
+		l.emit2Char(map[rune]itemType{
+			'=': POW_ASSIGN,
+		})
 
 	case '>':
-		l.accept(">=")
-		l.emit(itemOperator)
+		l.emit2Char(map[rune]itemType{
+			'>': APPEND,
+			'=': GE,
+		})
 	case '<':
-		l.accept("<=")
-		l.emit(itemOperator)
+		l.emit2Char(map[rune]itemType{
+			'=': LE,
+		})
+
+	case '=':
+		l.emit2Char(map[rune]itemType{
+			'=': EQ,
+		})
+
+	case '&':
+		if l.next() == '&' {
+			l.emit(AND)
+		} else {
+			l.errorf("& is only allowed as &&")
+		}
+	case '|':
+		if l.next() == '|' {
+			l.emit(OR)
+		} else {
+			l.errorf("| is only allowed as ||")
+		}
+
+	case '!':
+		l.emit2Char(map[rune]itemType{
+			'=': EQ,
+		})
 
 	default:
 		l.emit(itemChar)
@@ -357,6 +435,17 @@ func lexRegex(l *lexer) stateFn {
 	l.consumeUntil("/")
 	l.emit(itemRegex)
 	return nil
+}
+
+func (l *lexer) emit2Char(m map[rune]itemType) {
+	if val, ok := m[l.next()]; ok {
+		l.emit(val)
+		return
+	}
+	l.backup()
+
+	r, _ := utf8.DecodeRuneInString(l.input[l.start:])
+	l.emit(itemType(r))
 }
 
 func (l *lexer) consumeUntil(terms string) {
@@ -577,6 +666,15 @@ Loop:
 			if !l.atTerminator() {
 				return l.errorf("bad character %#U", r)
 			}
+			// Following paren means it's a function name
+			if l.peek() == '(' {
+				if _, in := builtinFuncs[word]; in {
+					l.emit(BUILTIN_FUNC_NAME)
+					return lexRule
+				}
+				l.emit(FUNC_NAME)
+				return lexRule
+			}
 			switch {
 			case key[word] > itemKeyword:
 				l.emit(key[word])
@@ -585,7 +683,7 @@ Loop:
 			case word == "true", word == "false":
 				l.emit(itemBool)
 			default:
-				l.emit(itemIdentifier)
+				l.emit(NAME)
 			}
 			break Loop
 		}
@@ -648,7 +746,7 @@ func (l *lexer) atTerminator() bool {
 		return true
 	}
 	switch r {
-	case eof, '.', ',', '|', ':', ')', '(', '}', ';':
+	case eof, '.', ',', '|', ':', ')', '(', '}', ';', '%', '+', '-', '*', '/', '<', '>':
 		return true
 	}
 	// Does r start the delimiter? This can be ambiguous (with delim=="//", $x/2 will

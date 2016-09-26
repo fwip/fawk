@@ -4,5 +4,6 @@ package parse
 import "testing"
 
 func TestParse(t *testing.T) {
-	parse("{print}")
+	parse(`{print}`)
+	parse(` NF%2 == 1`)
 }
