@@ -40,7 +40,7 @@ package parse
 
 
 %token OR   AND  NO_MATCH   EQ   LE   GE   NE   INCR  DECR  APPEND
-/*     '||' '&&' '!˜'       '==' '<=' '>=' '!=' '++'  '--'  '>>'   */
+/*     '||' '&&' '!~'       '==' '<=' '>=' '!=' '++'  '--'  '>>'   */
 
 
 /* One-character tokens. */
@@ -228,7 +228,7 @@ unary_expr       : '+' expr
                  | unary_expr EQ       expr
                  | unary_expr '>'      expr
                  | unary_expr GE       expr
-                 | unary_expr '˜'      expr
+                 | unary_expr '~'      expr
                  | unary_expr NO_MATCH expr
                  | unary_expr In NAME
                  | unary_expr AND newline_opt expr
@@ -253,7 +253,7 @@ non_unary_expr   : '(' expr ')'
                  | non_unary_expr EQ       expr
                  | non_unary_expr '>'      expr
                  | non_unary_expr GE       expr
-                 | non_unary_expr '˜'      expr
+                 | non_unary_expr '~'      expr
                  | non_unary_expr NO_MATCH expr
                  | non_unary_expr In NAME
                  | '(' multiple_expr_list ')' In NAME
@@ -307,7 +307,7 @@ unary_print_expr : '+' print_expr
                  | unary_print_expr '+'      print_expr
                  | unary_print_expr '-'      print_expr
                  | unary_print_expr          non_unary_print_expr
-                 | unary_print_expr '˜'      print_expr
+                 | unary_print_expr '~'      print_expr
                  | unary_print_expr NO_MATCH print_expr
                  | unary_print_expr In NAME
                  | unary_print_expr AND newline_opt print_expr
@@ -325,7 +325,7 @@ non_unary_print_expr : '(' expr ')'
                  | non_unary_print_expr '+'      print_expr
                  | non_unary_print_expr '-'      print_expr
                  | non_unary_print_expr          non_unary_print_expr
-                 | non_unary_print_expr '˜'      print_expr
+                 | non_unary_print_expr '~'      print_expr
                  | non_unary_print_expr NO_MATCH print_expr
                  | non_unary_print_expr In NAME
                  | '(' multiple_expr_list ')' In NAME
