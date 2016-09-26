@@ -401,9 +401,15 @@ func lexRule(l *lexer) stateFn {
 		}
 
 	case '!':
-		l.emit2Char(map[rune]itemType{
-			'=': EQ,
-		})
+		switch l.next() {
+		case '=':
+			l.emit(EQ)
+		case '~':
+			l.emit(NO_MATCH)
+			l.lookForRegex()
+		default:
+			l.backup()
+		}
 
 	case '~':
 		l.emit('~')
