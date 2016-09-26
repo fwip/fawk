@@ -179,7 +179,7 @@ func (l *lexer) backup() {
 
 // emit passes an item back to the client.
 func (l *lexer) emit(t itemType) {
-	fmt.Println("emit:", t, l.start, l.input[l.start:l.pos])
+	//fmt.Println("emit:", t, l.start, l.input[l.start:l.pos])
 	l.items <- item{int(t), l.start, l.input[l.start:l.pos]}
 	l.start = l.pos
 }
@@ -268,7 +268,7 @@ func lex(input string) *lexer {
 
 // run runs the state machine for the lexer.
 func (l *lexer) run() {
-	for l.state = lexRule; l.state != nil; {
+	for l.state = lexPattern; l.state != nil; {
 		l.state = l.state(l)
 	}
 	l.emit(NEWLINE)
@@ -293,27 +293,8 @@ const (
 )
 
 func lexPattern(l *lexer) stateFn {
-	r := l.next()
-	if isSpace(r) {
-		l.ignore()
-		return lexPattern
-	}
-	switch r {
-	case '{':
-		l.emit('{')
-		return lexRule
-	case eof:
-		return nil
-		//case isAlphaNumeric(r):
-		//l.backup()
-		//return lexIdentifier
-	case '/':
-		return l.tilNilThen(lexRegex, lexPattern)
-
-	case '\n':
-		l.emit(NEWLINE)
-	}
-	return lexPattern
+	l.lookForRegex()
+	return lexRule
 }
 
 // Lexes a 'rule' - what to do with lines that match a pattern
@@ -341,6 +322,7 @@ func lexRule(l *lexer) stateFn {
 		l.emit('{')
 	case '}':
 		l.emit('}')
+		return lexPattern
 
 	case ';':
 		l.emit(';')
@@ -423,6 +405,10 @@ func lexRule(l *lexer) stateFn {
 			'=': EQ,
 		})
 
+	case '~':
+		l.emit('~')
+		l.lookForRegex()
+
 	default:
 		l.emit(itemChar)
 	}
@@ -435,6 +421,26 @@ func lexRegex(l *lexer) stateFn {
 	l.consumeUntil("/")
 	l.emit(itemRegex)
 	return nil
+}
+
+func (l *lexer) lookForRegex() {
+	for {
+		r := l.next()
+		switch r {
+		case ' ', '\t':
+			l.ignore()
+		case '\n':
+			l.emit(NEWLINE)
+		case '/':
+			l.consumeUntil("/")
+			l.emit(ERE)
+			return
+
+		default:
+			l.backup()
+			return
+		}
+	}
 }
 
 func (l *lexer) emit2Char(m map[rune]itemType) {
@@ -746,7 +752,7 @@ func (l *lexer) atTerminator() bool {
 		return true
 	}
 	switch r {
-	case eof, '.', ',', '|', ':', ')', '(', '}', ';', '%', '+', '-', '*', '/', '<', '>':
+	case eof, '.', ',', '|', ':', ')', '(', '{', '}', ';', '%', '+', '-', '*', '/', '<', '>', '=':
 		return true
 	}
 	// Does r start the delimiter? This can be ambiguous (with delim=="//", $x/2 will
