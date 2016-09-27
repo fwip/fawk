@@ -307,7 +307,7 @@ func lexRule(l *lexer) stateFn {
 
 	case '"':
 		l.consumeUntil(`"`)
-		l.emit(itemQuote)
+		l.emit(STRING)
 
 	case '{':
 		l.emit('{')
@@ -331,8 +331,9 @@ func lexRule(l *lexer) stateFn {
 		return nil
 
 	case '$':
+		l.emit('$')
 		l.acceptAlphaNumeric()
-		l.emit(itemField)
+		l.emit(NAME)
 
 	case '%':
 		l.emit2Char(map[rune]itemType{

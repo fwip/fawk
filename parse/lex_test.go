@@ -11,6 +11,7 @@ var shouldLex = [...]string{
 	`NF%2 == 1`,
 	`BEGIN {OFS="\t"} {x+=$3} END{print x}`,
 	`{ $2 = $3 == 4 ? "true" : 0 }`,
+	` /my pattern/ {print "Found it!", $2 $3 } `,
 }
 
 func lexes(s string, t *testing.T) {
