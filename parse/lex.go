@@ -6,6 +6,7 @@ package parse
 
 import (
 	"fmt"
+	"io"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -140,17 +141,19 @@ type stateFn func(*lexer) stateFn
 
 // lexer holds the state of the scanner.
 type lexer struct {
-	name       string    // the name of the input; used only for error reports
-	input      string    // the string being scanned
-	leftDelim  string    // start of action
-	rightDelim string    // end of action
-	state      stateFn   // the next lexing function to enter
-	pos        Pos       // current position in the input
-	start      Pos       // start position of this item
-	width      Pos       // width of last rune read from input
-	lastPos    Pos       // position of most recent item returned by nextItem
-	items      chan item // channel of scanned items
-	parenDepth int       // nesting depth of ( ) exprs
+	name         string    // the name of the input; used only for error reports
+	input        string    // the string being scanned
+	leftDelim    string    // start of action
+	rightDelim   string    // end of action
+	parserErrors int       // How many parser errors were encountered (usually 0 or 1)
+	logger       io.Writer // Where to write logs to
+	state        stateFn   // the next lexing function to enter
+	pos          Pos       // current position in the input
+	start        Pos       // start position of this item
+	width        Pos       // width of last rune read from input
+	lastPos      Pos       // position of most recent item returned by nextItem
+	items        chan item // channel of scanned items
+	parenDepth   int       // nesting depth of ( ) exprs
 }
 
 // next returns the next rune in the input.
@@ -179,7 +182,7 @@ func (l *lexer) backup() {
 
 // emit passes an item back to the client.
 func (l *lexer) emit(t itemType) {
-	//fmt.Println("emit:", t, l.start, l.input[l.start:l.pos])
+	fmt.Fprintln(l.logger, "emit:", t, l.start, l.input[l.start:l.pos])
 	l.items <- item{int(t), l.start, l.input[l.start:l.pos]}
 	l.start = l.pos
 }
@@ -248,10 +251,11 @@ func (l *lexer) drain() {
 }
 
 // lex creates a new scanner for the input string.
-func lex(input string) *lexer {
+func lex(input string, logger io.Writer) *lexer {
 	l := &lexer{
-		input: input,
-		items: make(chan item),
+		input:  input,
+		logger: logger,
+		items:  make(chan item),
 	}
 	go l.run()
 	return l
@@ -315,7 +319,7 @@ func lexRule(l *lexer) stateFn {
 		return lexPattern
 
 	// Simple single-char tokens
-	case ';', '?', ':', ',':
+	case ';', '?', ':', ',', '(', ')':
 		l.emit(itemType(r))
 
 	case '#':
@@ -331,8 +335,6 @@ func lexRule(l *lexer) stateFn {
 
 	case '$':
 		l.emit('$')
-		l.acceptAlphaNumeric()
-		l.emit(NAME)
 
 	case '%':
 		l.emit2Char(map[rune]itemType{
@@ -882,5 +884,6 @@ func isAlphaNumeric(r rune) bool {
 }
 
 func (l *lexer) Error(s string) {
-	fmt.Println(s)
+	l.parserErrors++
+	fmt.Fprintf(l.logger, "Parser error: %s\n", s)
 }

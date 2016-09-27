@@ -1,6 +1,8 @@
 %{
 package parse
 
+import "os"
+
 %}
 
 %union {
@@ -390,8 +392,9 @@ newline_opt      : /* empty */
 %%
 
 func parse(s string){
-  l := lex(s)
+  l := lex(s, os.Stderr)
   yyErrorVerbose = true
+  yyDebug = 5
   yyParse(l)
 }
 

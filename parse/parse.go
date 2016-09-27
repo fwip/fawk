@@ -4,7 +4,9 @@ package parse
 import __yyfmt__ "fmt"
 
 //line parse.y:2
-//line parse.y:6
+import "os"
+
+//line parse.y:8
 type yySymType struct {
 	yys int
 	pos Pos    // The starting position, in bytes, of this item in the input string.
@@ -128,11 +130,12 @@ const yyEofCode = 1
 const yyErrCode = 2
 const yyInitialStackSize = 16
 
-//line parse.y:390
+//line parse.y:392
 
 func parse(s string) {
-	l := lex(s)
+	l := lex(s, os.Stderr)
 	yyErrorVerbose = true
+	yyDebug = 5
 	yyParse(l)
 }
 

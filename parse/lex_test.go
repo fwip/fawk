@@ -1,21 +1,21 @@
 package parse
 
-import "fmt"
 import "testing"
+import "os"
 
 var shouldLex = [...]string{
 	`{print}`,
 	` /Err\/die/ `,
-	` { x += $2; $3 = $1>>2 ; print } `,
+	` { x += $2; $3 = lshift($1, 2) ; print } `,
 	` { " Hi I'm \" georigiono" } `,
 	`NF%2 == 1`,
-	`BEGIN {OFS="\t"} {x+=$3} END{print x}`,
 	`{ $2 = $3 == 4 ? "true" : 0 }`,
 	` /my pattern/ {print "Found it!", $2 $3 } `,
+	`BEGIN {OFS="\t"} {x+=$3} END{print x}`,
 }
 
 func lexes(s string, t *testing.T) {
-	l := lex(s)
+	l := lex(s, os.Stderr)
 	n := l.nextItem()
 	for ; n.yys != int(itemEOF); n = l.nextItem() {
 		t.Logf("%-20s %#v\n", n, n)
@@ -26,11 +26,10 @@ func lexes(s string, t *testing.T) {
 	t.Log(n)
 }
 
-func TestIt(t *testing.T) {
+func TestLexing(t *testing.T) {
 	for _, s := range shouldLex {
 		t.Run("ShouldLex"+s, func(t *testing.T) {
 			lexes(s, t)
 		})
 	}
-	fmt.Println("done")
 }
