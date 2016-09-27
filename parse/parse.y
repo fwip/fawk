@@ -65,15 +65,15 @@ program          : item_list
 
 
 item_list        : newline_opt
-                 | actionless_item_list item terminator
-                 | item_list            item terminator
-                 | item_list          action terminator
+                 | actionless_item_list item opt_terminator
+                 | item_list            item opt_terminator
+                 | item_list          action opt_terminator
                  ;
 
 
 actionless_item_list :
-                   item_list            pattern terminator
-                 | actionless_item_list pattern terminator
+                   item_list            pattern opt_terminator
+                 | actionless_item_list pattern opt_terminator
                  ;
 
 
@@ -107,6 +107,9 @@ action           : '{' newline_opt                             '}'
                  | '{' newline_opt unterminated_statement_list '}'
                  ;
 
+opt_terminator   : /* empty */
+                 | terminator
+                 ;
 
 terminator       : terminator ';'
                  | terminator NEWLINE

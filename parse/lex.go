@@ -262,7 +262,6 @@ func (l *lexer) run() {
 	for l.state = lexPattern; l.state != nil; {
 		l.state = l.state(l)
 	}
-	l.emit(NEWLINE)
 	l.emit(itemEOF)
 	close(l.items)
 }
