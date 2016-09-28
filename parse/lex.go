@@ -266,7 +266,6 @@ func (l *lexer) run() {
 	for l.state = lexPattern; l.state != nil; {
 		l.state = l.state(l)
 	}
-	l.emit(itemEOF)
 	close(l.items)
 }
 
@@ -305,8 +304,6 @@ func lexRule(l *lexer) stateFn {
 	}
 
 	switch r {
-	case '\\': //Skip literal backslash, consume next item
-		l.next()
 
 	case '"':
 		l.consumeUntil(`"`)
