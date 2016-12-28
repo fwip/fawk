@@ -65,19 +65,27 @@ const (
 	itemComment               // A comment, starting with '#'
 	itemBuiltinFunc           // A built-in function
 	// Keywords appear after all the rest.
-	itemKeyword          // used only to delimit the keywords
-	itemBlock            // block keyword
-	itemDot              // the cursor, spelled '.'
-	itemDefine           // define keyword
-	itemElse             // else keyword
-	itemIf               // if keyword
-	itemNil              // the untyped nil constant, easiest to treat as a keyword
-	itemRange            // range keyword
-	itemTemplate         // template keyword
-	itemWith             // with keyword
-	itemPrint    = Print // print function  TODO: Should maybe be not keyword?
-	itemBegin    = Begin // BEGIN condition
-	itemEnd      = End   // END condition
+	itemKeyword  // used only to delimit the keywords
+	itemBlock    // block keyword
+	itemDot      // the cursor, spelled '.'
+	itemDefine   // define keyword
+	itemElse     // else keyword
+	itemIf       // if keyword
+	itemNil      // the untyped nil constant, easiest to treat as a keyword
+	itemRange    // range keyword
+	itemTemplate // template keyword
+	itemWith     // with keyword
+	itemNewline
+
+	NO_MATCH
+	ERE
+	BUILTIN_FUNC_NAME
+	FUNC_NAME
+	NAME
+
+	itemPrint = PRINT // print function  TODO: Should maybe be not keyword?
+	itemBegin = BEGIN // BEGIN condition
+	itemEnd   = END   // END condition
 )
 
 var key = map[string]itemType{
@@ -307,7 +315,7 @@ func lexRule(l *lexer) stateFn {
 
 	case '"':
 		l.consumeUntil(`"`)
-		l.emit(STRING)
+		l.emit(itemString)
 
 	case '{':
 		l.emit('{')
@@ -325,7 +333,7 @@ func lexRule(l *lexer) stateFn {
 		l.emit(itemComment)
 
 	case '\n':
-		l.emit(NEWLINE)
+		l.emit(itemNewline)
 
 	case eof:
 		return nil
@@ -335,32 +343,32 @@ func lexRule(l *lexer) stateFn {
 
 	case '%':
 		l.emit2Char(map[rune]itemType{
-			'=': MOD_ASSIGN,
+			'=': AREM,
 		})
 	case '+':
 		l.emit2Char(map[rune]itemType{
-			'+': INCR,
-			'=': ADD_ASSIGN,
+			'+': INC,
+			'=': AADD,
 		})
 	case '-':
 		l.emit2Char(map[rune]itemType{
-			'-': DECR,
-			'=': SUB_ASSIGN,
+			'-': DEC,
+			'=': ASUB,
 		})
 
 	case '*':
 		l.emit2Char(map[rune]itemType{
-			'=': MUL_ASSIGN,
+			'=': AMUL,
 		})
 
 	case '/':
 		l.emit2Char(map[rune]itemType{
-			'=': DIV_ASSIGN,
+			'=': ADIV,
 		})
 
 	case '^':
 		l.emit2Char(map[rune]itemType{
-			'=': POW_ASSIGN,
+			'=': AEXP,
 		})
 
 	case '>':
@@ -427,7 +435,7 @@ func (l *lexer) lookForRegex() {
 		case ' ', '\t':
 			l.ignore()
 		case '\n':
-			l.emit(NEWLINE)
+			l.emit(itemNewline)
 		case '/':
 			l.consumeUntil("/")
 			l.emit(ERE)

@@ -2,7 +2,7 @@ package parse
 
 import "os"
 
-//go:generate go tool yacc -o parse.go -v parse.table parse.y
+//go:generate go tool yacc -o parse.go -v parse.table awk.y
 import "testing"
 
 var shouldParse = [...]string{

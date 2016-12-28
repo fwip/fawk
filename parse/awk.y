@@ -1,7 +1,7 @@
 %{
 package parse
 
-import "os"
+import "fmt"
 /*
  * CDDL HEADER START
  *
@@ -46,13 +46,20 @@ import "os"
  * is codeset independent.
  */
 
-//#ident	"%Z%%M%	%I%	%E% SMI"
-//#include "awk.h"
-static NODE * fliplist ANSI((NODE *np));
+var yytree *node
+var NNULL *node
+
+var doing_begin int
+var npattern int
+var funparm int
+
+var redelim rune = '/'
+var catterm rune
+
 %}
 
 %union	{
-	NODE	*node;
+	node	*node;
 };
 
 /*
@@ -159,35 +166,38 @@ prog:
 	}
 	| rule SEMI prog		= {
 		if ($1 != NNULL) {
-			if (yytree != NNULL)
-				yytree = node(COMMA, $1, yytree); else
+			if (yytree != NNULL){
+				yytree = newNode(COMMA, $1, yytree)
+			} else {
 				yytree = $1;
+			}
 		}
 	}
 	;
 
 rule:	  pattern LBRACE statlist RBRACE	= {
-		$$ = node(PACT, $1, $3);
+		$$ = newNode(PACT, $1, $3);
 		doing_begin = 0;
 	}
 	| LBRACE statlist RBRACE		= {
 		npattern++;
-		$$ = node(PACT, NNULL, $2);
+		$$ = newNode(PACT, NNULL, $2);
 	}
 	| pattern				= {
-		$$ = node(PACT, $1, node(PRINT, NNULL, NNULL));
+		$$ = newNode(PACT, $1, newNode(PRINT, NNULL, NNULL));
 		doing_begin = 0;
 	}
 	| DEFFUNC VAR
-		{ $2->n_type = UFUNC; funparm = 1; }
+		{ $2.typ = UFUNC; funparm = 1; }
 	    LPAREN varlist RPAREN
 		{ funparm = 0; }
 	    LBRACE statlist { uexit($5); } RBRACE = {
-		$2->n_ufunc = node(DEFFUNC, $5, fliplist($9));
+		$2.ufunc = newNode(DEFFUNC, $5, fliplist($9));
 		$$ = NNULL;
 	}
 	| DEFFUNC UFUNC				= {
-		awkerr((char *) gettext("function \"%S\" redefined"), $2->n_name);
+		//awkerr((char *) gettext("function \"%S\" redefined"), $2.name);
+		fmt.Println("yargh! Ye redefined a function matey", $2.name);
 		/* NOTREACHED */
 	}
 	|					= {
@@ -198,22 +208,22 @@ rule:	  pattern LBRACE statlist RBRACE	= {
 pattern:
 	  simplepattern
 	| expr COMMA expr			= {
-		++npattern;
-		$$ = node(COMMA, $1, $3);
+		npattern++;
+		$$ = newNode(COMMA, $1, $3);
 	}
 	;
 
 simplepattern:
 	  BEGIN					= {
-		$$ = node(BEGIN, NNULL, NNULL);
+		$$ = newNode(BEGIN, NNULL, NNULL);
 		doing_begin++;
 	}
 	| END					= {
-		++npattern;
-		$$ = node(END, NNULL, NNULL);
+		npattern++;
+		$$ = newNode(END, NNULL, NNULL);
 	}
 	| expr					 = {
-		++npattern;
+		npattern++;
 		$$ = $1;
 	}
 	;
@@ -228,7 +238,7 @@ eexprlist:
 exprlist:
 	  expr %prec COMMA
 	| exprlist COMMA expr			= {
-		$$ = node(COMMA, $1, $3);
+		$$ = newNode(COMMA, $1, $3);
 	}
 	;
 
@@ -242,7 +252,7 @@ varlist:
 varlist2:
 	  var
 	| var COMMA varlist2			= {
-		$$ = node(COMMA, $1, $3);
+		$$ = newNode(COMMA, $1, $3);
 	}
 	;
 
@@ -258,106 +268,106 @@ fexpr:
  */
 expr:
 	  expr PLUSC expr			= {
-		$$ = node(ADD, $1, $3);
+		$$ = newNode(ADD, $1, $3);
 	}
 	| expr HYPHEN expr			= {
-		$$ = node(SUB, $1, $3);
+		$$ = newNode(SUB, $1, $3);
 	}
 	| expr STAR expr			= {
-		$$ = node(MUL, $1, $3);
+		$$ = newNode(MUL, $1, $3);
 	}
 	| expr SLASH expr			= {
-		$$ = node(DIV, $1, $3);
+		$$ = newNode(DIV, $1, $3);
 	}
 	| expr PERCENT expr			= {
-		$$ = node(REM, $1, $3);
+		$$ = newNode(REM, $1, $3);
 	}
 	| expr EXP expr				= {
-		$$ = node(EXP, $1, $3);
+		$$ = newNode(EXP, $1, $3);
 	}
 	| expr AND expr				= {
-		$$ = node(AND, $1, $3);
+		$$ = newNode(AND, $1, $3);
 	}
 	| expr OR expr				= {
-		$$ = node(OR, $1, $3);
+		$$ = newNode(OR, $1, $3);
 	}
 	| expr QUEST expr COLON expr		= {
-		$$ = node(QUEST, $1, node(COLON, $3, $5));
+		$$ = newNode(QUEST, $1, newNode(COLON, $3, $5));
 	}
 	| lvalue ASG expr			= {
-		$$ = node(ASG, $1, $3);
+		$$ = newNode(ASG, $1, $3);
 	}
 	| lvalue AADD expr			= {
-		$$ = node(AADD, $1, $3);
+		$$ = newNode(AADD, $1, $3);
 	}
 	| lvalue ASUB expr			= {
-		$$ = node(ASUB, $1, $3);
+		$$ = newNode(ASUB, $1, $3);
 	}
 	| lvalue AMUL expr			= {
-		$$ = node(AMUL, $1, $3);
+		$$ = newNode(AMUL, $1, $3);
 	}
 	| lvalue ADIV expr			= {
-		$$ = node(ADIV, $1, $3);
+		$$ = newNode(ADIV, $1, $3);
 	}
 	| lvalue AREM expr			= {
-		$$ = node(AREM, $1, $3);
+		$$ = newNode(AREM, $1, $3);
 	}
 	| lvalue AEXP expr			= {
-		$$ = node(AEXP, $1, $3);
+		$$ = newNode(AEXP, $1, $3);
 	}
 	| lvalue INC				= {
-		$$ = node(INC, $1, NNULL);
+		$$ = newNode(INC, $1, NNULL);
 	}
 	| lvalue DEC				= {
-		$$ = node(DEC, $1, NNULL);
+		$$ = newNode(DEC, $1, NNULL);
 	}
 	| expr EQ expr				= {
-		$$ = node(EQ, $1, $3);
+		$$ = newNode(EQ, $1, $3);
 	}
 	| expr NE expr				= {
-		$$ = node(NE, $1, $3);
+		$$ = newNode(NE, $1, $3);
 	}
 	| expr RANGLE expr			= {
-		$$ = node(GT, $1, $3);
+		$$ = newNode(GT, $1, $3);
 	}
 	| expr LANGLE expr			= {
-		$$ = node(LT, $1, $3);
+		$$ = newNode(LT, $1, $3);
 	}
 	| expr GE expr				= {
-		$$ = node(GE, $1, $3);
+		$$ = newNode(GE, $1, $3);
 	}
 	| expr LE expr				= {
-		$$ = node(LE, $1, $3);
+		$$ = newNode(LE, $1, $3);
 	}
 	| expr TILDE expr			= {
-		$$ = node(TILDE, $1, $3);
+		$$ = newNode(TILDE, $1, $3);
 	}
 	| expr NRE expr				= {
-		$$ = node(NRE, $1, $3);
+		$$ = newNode(NRE, $1, $3);
 	}
 	| expr IN var				= {
-		$$ = node(IN, $3, $1);
+		$$ = newNode(IN, $3, $1);
 	}
 	| LPAREN exprlist RPAREN IN var		= {
-		$$ = node(IN, $5, $2);
+		$$ = newNode(IN, $5, $2);
 	}
 	| getline
 	| rvalue
 	| expr CONCAT expr			= {
-		$$ = node(CONCAT, $1, $3);
+		$$ = newNode(CONCAT, $1, $3);
 	}
 	;
 
 lvalue:
 	  DOLLAR rvalue				= {
-		$$ = node(FIELD, $2, NNULL);
+		$$ = newNode(FIELD, $2, NNULL);
 	}
 	/*
 	 * Prevents conflict with FOR LPAREN var IN var RPAREN production
 	 */
 	| var %prec COMMA
 	| var LSQUARE exprlist RSQUARE		= {
-		$$ = node(INDEX, $1, $3);
+		$$ = newNode(INDEX, $1, $3);
 	}
 	;
 
@@ -373,31 +383,31 @@ rvalue:
 		$$ = $2;
 	}
 	| EXCLAMATION expr			= {
-		$$ = node(NOT, $2, NNULL);
+		$$ = newNode(NOT, $2, NNULL);
 	}
 	| HYPHEN expr %prec UMINUS		= {
-		$$ = node(SUB, const0, $2);
+		$$ = newNode(SUB, const0, $2);
 	}
 	| PLUSC expr %prec UPLUS		= {
 		$$ = $2;
 	}
 	| DEC lvalue				= {
-		$$ = node(PRE_DEC, $2, NNULL);
+		$$ = newNode(PRE_DEC, $2, NNULL);
 	}
 	| INC lvalue				= {
-		$$ = node(PRE_INC, $2, NNULL);
+		$$ = newNode(PRE_INC, $2, NNULL);
 	}
 	| FUNC					= {
-		$$ = node(CALLFUNC, $1, NNULL);
+		$$ = newNode(CALLFUNC, $1, NNULL);
 	}
 	| FUNC LPAREN eexprlist RPAREN term	= {
-		$$ = node(CALLFUNC, $1, $3);
+		$$ = newNode(CALLFUNC, $1, $3);
 	}
 	| UFUNC LPAREN eexprlist RPAREN term	= {
-		$$ = node(CALLUFUNC, $1, $3);
+		$$ = newNode(CALLUFUNC, $1, $3);
 	}
 	| VAR LPAREN eexprlist RPAREN term	= {
-		$$ = node(CALLUFUNC, $1, $3);
+		$$ = newNode(CALLUFUNC, $1, $3);
 	}
 	| SLASH {redelim='/';} URE SLASH %prec URE	= {
 		$$ = $<node>3;
@@ -406,10 +416,10 @@ rvalue:
 
 statement:
 	  FOR LPAREN fexpr SEMI fexpr SEMI fexpr RPAREN statement = {
-		$$ = node(FOR, node(COMMA, $3, node(COMMA, $5, $7)), $9);
+		$$ = newNode(FOR, newNode(COMMA, $3, newNode(COMMA, $5, $7)), $9);
 	}
 	| FOR LPAREN var IN var RPAREN statement = {
-		register NODE *np;
+		//register NODE *np;
 
 		/*
 		 * attempt to optimize statements for the form
@@ -417,57 +427,60 @@ statement:
 		 * to
 		 *    delete x
 		 */
+		/*
 		np = $7;
 		if (np != NNULL
 		 && np->n_type == DELETE
 		 && (np = np->n_left)->n_type == INDEX
 		 && np->n_left == $5
-		 && np->n_right == $3)
-			$$ = node(DELETE, $5, NNULL);
-		else
-			$$ = node(FORIN, node(IN, $3, $5), $7);
+		 && np->n_right == $3){
+			$$ = newNode(DELETE, $5, NNULL);
+		} else {
+			$$ = newNode(FORIN, newNode(IN, $3, $5), $7);
+		}
+		*/
 	}
 	| WHILE LPAREN expr RPAREN statement	= {
-		$$ = node(WHILE, $3, $5);
+		$$ = newNode(WHILE, $3, $5);
 	}
 	| DO statement WHILE LPAREN expr RPAREN	= {
-		$$ = node(DO, $5, $2);
+		$$ = newNode(DO, $5, $2);
 	}
 	| IF LPAREN expr RPAREN statement ELSE statement = {
-		$$ = node(IF, $3, node(ELSE, $5, $7));
+		$$ = newNode(IF, $3, newNode(ELSE, $5, $7));
 	}
 	| IF LPAREN expr RPAREN statement %prec ELSE	= {
-		$$ = node(IF, $3, node(ELSE, $5, NNULL));
+		$$ = newNode(IF, $3, newNode(ELSE, $5, NNULL));
 	}
 	| CONTINUE SEMI				= {
-		$$ = node(CONTINUE, NNULL, NNULL);
+		$$ = newNode(CONTINUE, NNULL, NNULL);
 	}
 	| BREAK SEMI				= {
-		$$ = node(BREAK, NNULL, NNULL);
+		$$ = newNode(BREAK, NNULL, NNULL);
 	}
 	| NEXT SEMI				= {
-		$$ = node(NEXT, NNULL, NNULL);
+		$$ = newNode(NEXT, NNULL, NNULL);
 	}
 	| DELETE lvalue SEMI			= {
-		$$ = node(DELETE, $2, NNULL);
+		$$ = newNode(DELETE, $2, NNULL);
 	}
 	| RETURN fexpr SEMI			= {
-		$$ = node(RETURN, $2, NNULL);
+		$$ = newNode(RETURN, $2, NNULL);
 	}
 	| EXIT fexpr SEMI			= {
-		$$ = node(EXIT, $2, NNULL);
+		$$ = newNode(EXIT, $2, NNULL);
 	}
 	| PRINT eexprlist fileout SEMI		= {
-		$$ = node(PRINT, $2, $3);
+		$$ = newNode(PRINT, $2, $3);
 	}
 	| PRINT LPAREN exprlist RPAREN fileout SEMI	= {
-		$$ = node(PRINT, $3, $5);
+		$$ = newNode(PRINT, $3, $5);
 	}
 	| PRINTF exprlist fileout SEMI		= {
-		$$ = node(PRINTF, $2, $3);
+		$$ = newNode(PRINTF, $2, $3);
 	}
 	| PRINTF LPAREN exprlist RPAREN fileout SEMI	= {
-		$$ = node(PRINTF, $3, $5);
+		$$ = newNode(PRINTF, $3, $5);
 	}
 	| expr SEMI 				= {
 		$$ = $1;
@@ -484,24 +497,25 @@ statement:
 statlist:
 	  statement
 	| statlist statement			= {
-		if ($1 == NNULL)
+		if ($1 == NNULL) {
 			$$ = $2;
-		else if ($2 == NNULL)
+		} else if ($2 == NNULL) {
 			$$ = $1;
-		else
-			$$ = node(COMMA, $1, $2);
+		} else {
+			$$ = newNode(COMMA, $1, $2);
+		}
 	}
 	;
 
 fileout:
 	  WRITE expr				= {
-		$$ = node(WRITE, $2, NNULL);
+		$$ = newNode(WRITE, $2, NNULL);
 	}
 	| APPEND expr				= {
-		$$ = node(APPEND, $2, NNULL);
+		$$ = newNode(APPEND, $2, NNULL);
 	}
 	| PIPE expr				= {
-		$$ = node(PIPE, $2, NNULL);
+		$$ = newNode(PIPE, $2, NNULL);
 	}
 	|					= {
 		$$ = NNULL;
@@ -510,13 +524,13 @@ fileout:
 
 getline:
 	  GETLINE optvar %prec WRITE		= {
-		$$ = node(GETLINE, $2, NNULL);
+		$$ = newNode(GETLINE, $2, NNULL);
 	}
 	| expr BAR GETLINE optvar		= {
-		$$ = node(GETLINE, $4, node(PIPESYM, $1, NNULL));
+		$$ = newNode(GETLINE, $4, newNode(PIPESYM, $1, NNULL));
 	}
 	| GETLINE optvar LANGLE expr		= {
-		$$ = node(GETLINE, $2, node(LT, $4, NNULL));
+		$$ = newNode(GETLINE, $2, newNode(LT, $4, NNULL));
 	}
 	;
 
@@ -536,6 +550,44 @@ term:
  * so that it can easily be traversed from left
  * to right without recursion.
  */
+
+
+func fliplist(np *node) *node{
+	if np == nil || np.isLeaf(){
+		return np
+	}
+
+  // Flip right child
+	np.right = fliplist(np.right)
+
+	if np.typ == COMMA {
+		for np.left != nil && np.left.typ == COMMA {
+			np.left.right = fliplist(np.left.right)
+			var spp *node
+			for spp = np.left.right; spp != nil && spp.typ == COMMA; {
+				fmt.Println("flipping")
+			}
+			np.left = spp
+			spp = np
+			np = spp.left
+		}
+
+	}
+
+	if np.left != nil && np.typ != FUNC && np.typ != UFUNC {
+		np.left = fliplist(np.left)
+	}
+
+	return np
+}
+
+
+/* Cleanup when exiting function */
+/* noop */
+func uexit(np *node){
+}
+
+/*
 static NODE *
 fliplist(np)
 register NODE *np;
@@ -555,18 +607,15 @@ register NODE *np;
 				register NODE* *spp;
 
 				lp->n_right = fliplist(lp->n_right);
-				for (spp = &lp->n_right;
-				    *spp != NNULL && (*spp)->n_type==COMMA;
-				     spp = &(*spp)->n_right)
-					;
+				for (spp = &lp->n_right; *spp != NNULL && (*spp)->n_type==COMMA; spp = &(*spp)->n_right) ;
 				np->n_left = *spp;
 				*spp = np;
 				np = lp;
 			}
 		}
-		if (np->n_left != NULL &&
-		    (type = np->n_left->n_type)!= FUNC && type!=UFUNC)
+		if (np->n_left != NULL && (type = np->n_left->n_type)!= FUNC && type!=UFUNC)
 			np->n_left = fliplist(np->n_left);
 	}
 	return (np);
 }
+*/
