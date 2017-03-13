@@ -89,7 +89,7 @@ var catterm rune
  * Terminal symbols not used in action() and exprrreduce()
  * switch statements.
  */
-%token	<node>	CONSTANT VAR FUNC
+%token	<node>	CONSTANT VAR FUNC NAME
 %token	<node>	DEFFUNC BEGIN END CLOSE ELSE PACT
 %right		ELSE
 %token		DOT CALLUFUNC
@@ -122,6 +122,7 @@ var catterm rune
        SEMI		/* ';' */
        LBRACE		/* '{' */
        RBRACE		/* '}' */
+			 NEWLINE
 
 /*
  * Priorities of operators
@@ -148,7 +149,7 @@ var catterm rune
 %left	LPAREN RPAREN
 
 %type	<node>	prog rule pattern expr rvalue lvalue fexpr varlist varlist2
-%type	<node>	statement statlist fileout exprlist eexprlist simplepattern
+%type	<node>	statement statlist fileout exprlist eexprlist simplepattern terminator
 %type	<node>	getline optvar var
 %type	<node>	dummy
 
@@ -161,10 +162,10 @@ dummy:
 		}
 		;
 prog:
-	  rule				= {
+	  rule	= {
 		yytree = $1;
 	}
-	| rule SEMI prog		= {
+	| rule terminator prog		= {
 		if ($1 != NNULL) {
 			if (yytree != NNULL){
 				yytree = newNode(COMMA, $1, yytree)
@@ -175,7 +176,7 @@ prog:
 	}
 	;
 
-rule:	  pattern LBRACE statlist RBRACE	= {
+rule:	  pattern LBRACE statlist RBRACE = {
 		$$ = newNode(PACT, $1, $3);
 		doing_begin = 0;
 	}
@@ -374,11 +375,13 @@ lvalue:
 var:
 	  VAR
 	| PARM
+	/*| NAME*/
 	;
 
 rvalue:
 	  lvalue %prec COMMA
 	| CONSTANT
+	| NAME
 	| LPAREN expr RPAREN term		= {
 		$$ = $2;
 	}
@@ -409,8 +412,8 @@ rvalue:
 	| VAR LPAREN eexprlist RPAREN term	= {
 		$$ = newNode(CALLUFUNC, $1, $3);
 	}
-	| SLASH {redelim='/';} URE SLASH %prec URE	= {
-		$$ = $<node>3;
+	| URE = {
+		$$ = $<node>1;
 	}
 	;
 
@@ -541,6 +544,27 @@ optvar:
 	}
 	;
 
+/*
+optsemi:
+		SEMI = {
+		$$ = NNULL
+	}
+	| = {
+		$$ = NNULL
+	}
+	;
+*/
+
+terminator:
+		SEMI = {
+		$$ = NNULL
+	}
+	| NEWLINE = {
+		$$ = NNULL
+	}
+	;
+
+
 term:
 	  {catterm = 1;}
 	;
@@ -553,6 +577,8 @@ term:
 
 
 func fliplist(np *node) *node{
+	return np
+
 	if np == nil || np.isLeaf(){
 		return np
 	}

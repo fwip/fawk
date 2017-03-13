@@ -1,15 +1,16 @@
 package parse
 
+import "fmt"
 import "os"
 
 //go:generate go tool yacc -o parse.go -v parse.table awk.y
 import "testing"
 
 var shouldParse = [...]string{
-	`{print}`,
+	`{print;}`,
 	` NF%2 == 1`,
-	` /my pattern/ {print "Found it!", $2 $3} `,
-	`BEGIN {OFS="\t"}  {x+=$3} END{print x}`,
+	//` /my pattern/ {print "Found it!", $2 $3} `,
+	//`BEGIN {OFS="\t"}  {x+=$3} END{print x}`,
 }
 
 func parses(s string, t *testing.T) {
@@ -20,6 +21,8 @@ func parses(s string, t *testing.T) {
 	if l.parserErrors > 0 {
 		t.Fail()
 	}
+	fmt.Println("Tree:")
+	fmt.Println(yytree)
 }
 
 func TestParse(t *testing.T) {

@@ -78,10 +78,9 @@ const (
 	itemNewline
 
 	NO_MATCH
-	ERE
 	BUILTIN_FUNC_NAME
 	FUNC_NAME
-	NAME
+	//NAME
 
 	itemPrint = PRINT // print function  TODO: Should maybe be not keyword?
 	itemBegin = BEGIN // BEGIN condition
@@ -125,6 +124,31 @@ var builtinFuncs = map[string]int{
 	"system":  0,
 	"tolower": 0,
 	"toupper": 0,
+}
+
+var charTable = map[itemType]itemType{
+	'|': BAR,
+	'^': CARAT,
+	'<': LANGLE,
+	'>': RANGLE,
+	'+': PLUSC,
+	'-': HYPHEN,
+	'*': STAR,
+	'/': SLASH,
+	'%': PERCENT,
+	'!': EXCLAMATION,
+	'$': DOLLAR,
+	'[': LSQUARE,
+	']': RSQUARE,
+	'(': LPAREN,
+	')': RPAREN,
+	';': SEMI,
+	'{': LBRACE,
+	'}': RBRACE,
+	'?': QUEST,
+	':': COLON,
+	'=': ASG,
+	',': COMMA,
 }
 
 const eof = -1
@@ -190,6 +214,9 @@ func (l *lexer) backup() {
 
 // emit passes an item back to the client.
 func (l *lexer) emit(t itemType) {
+	if typ, ok := charTable[t]; ok {
+		t = typ
+	}
 	fmt.Fprintln(l.logger, "emit:", t, l.start, l.input[l.start:l.pos])
 	l.items <- item{int(t), l.start, l.input[l.start:l.pos]}
 	l.start = l.pos
@@ -315,16 +342,20 @@ func lexRule(l *lexer) stateFn {
 
 	case '"':
 		l.consumeUntil(`"`)
-		l.emit(itemString)
+		l.emit(CONSTANT)
 
 	case '{':
 		l.emit('{')
 	case '}':
+		l.emit(';') // Add fake semicolon
 		l.emit('}')
+		l.emit(';')
 		return lexPattern
 
+	case ';':
+		l.emit(';')
 	// Simple single-char tokens
-	case ';', '?', ':', ',', '(', ')':
+	case '?', ':', ',', '(', ')':
 		l.emit(itemType(r))
 
 	case '#':
@@ -333,13 +364,14 @@ func lexRule(l *lexer) stateFn {
 		l.emit(itemComment)
 
 	case '\n':
-		l.emit(itemNewline)
+		//l.emit(itemNewline)
+		l.emit(SEMI)
 
 	case eof:
 		return nil
 
 	case '$':
-		l.emit('$')
+		l.emit(DOLLAR)
 
 	case '%':
 		l.emit2Char(map[rune]itemType{
@@ -402,7 +434,7 @@ func lexRule(l *lexer) stateFn {
 	case '!':
 		switch l.next() {
 		case '=':
-			l.emit(EQ)
+			l.emit(NE)
 		case '~':
 			l.emit(NO_MATCH)
 			l.lookForRegex()
@@ -438,7 +470,7 @@ func (l *lexer) lookForRegex() {
 			l.emit(itemNewline)
 		case '/':
 			l.consumeUntil("/")
-			l.emit(ERE)
+			l.emit(URE)
 			return
 
 		default:
@@ -666,6 +698,12 @@ func lexSpace(l *lexer) stateFn {
 */
 // lexIdentifier scans an alphanumeric.
 func lexRuleIdentifier(l *lexer) stateFn {
+
+	if l.scanNumber() {
+		l.emit(CONSTANT)
+		return lexRule
+	}
+
 Loop:
 	for {
 		switch r := l.next(); {
@@ -694,7 +732,7 @@ Loop:
 			case word == "true", word == "false":
 				l.emit(itemBool)
 			default:
-				l.emit(NAME)
+				l.emit(VAR)
 			}
 			break Loop
 		}
@@ -810,7 +848,7 @@ func lexNumber(l *lexer) stateFn {
 	}
 	return lexInsideAction
 }
-
+*/
 func (l *lexer) scanNumber() bool {
 	// Optional leading sign.
 	l.accept("+-")
@@ -836,6 +874,8 @@ func (l *lexer) scanNumber() bool {
 	}
 	return true
 }
+
+/*
 
 // lexQuote scans a quoted string.
 func lexQuote(l *lexer) stateFn {
