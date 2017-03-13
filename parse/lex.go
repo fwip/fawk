@@ -6,11 +6,13 @@ package parse
 
 import (
 	"fmt"
+	"io"
 	"strings"
 	"unicode"
 	"unicode/utf8"
 )
 
+// Pos is a starting position, in bytes, relative to the start of the program
 type Pos int
 
 // item represents a token or text string returned from the scanner.
@@ -38,29 +40,57 @@ func (i item) String() string {
 type itemType int
 
 const (
-	itemError        itemType = iota // error occurred; value is text of error
-	itemBool                         // boolean constant
-	itemChar                         // printable ASCII character; grab bag for comma etc.
-	itemCharConstant                 // character constant
-	itemComplex                      // complex constant (1+2i); imaginary is just a number
-	itemColonEquals                  // colon-equals (':=') introducing a declaration
-	itemEOF
-	itemField      // alphanumeric identifier starting with '$'
-	itemIdentifier // alphanumeric identifier not starting with '$'
-	itemLeftDelim  // left action delimiter
-	itemLeftParen  // '(' inside action
-	itemNumber     // simple number, including imaginary
-	itemPipe       // pipe symbol
-	itemRawString  // raw quoted string (includes quotes)
-	itemRightDelim // right action delimiter
-	itemRightParen // ')' inside action
-	itemSpace      // run of spaces separating arguments
-	itemString     // quoted string (includes quotes)
-	itemText       // plain text
-	itemVariable   // variable starting with '$', such as '$' or  '$1' or '$hello'
-	itemRegex      // regex surrounded by `/`
-	itemOperator   // catchall for <=, +, >>, etc
-	itemQuote      // A quoted string
+	itemEOF          itemType = iota + 1000
+	itemError                 // error occurred; value is text of error
+	itemBool                  // boolean constant
+	itemChar                  // printable ASCII character; grab bag for comma etc.
+	itemCharConstant          // character constant
+	itemComplex               // complex constant (1+2i); imaginary is just a number
+	itemColonEquals           // colon-equals (':=') introducing a declaration
+	itemField                 // alphanumeric identifier starting with '$'
+	itemIdentifier            // alphanumeric identifier not starting with '$'
+	itemLeftDelim             // left action delimiter
+	itemLeftParen             // '(' inside action
+	itemNumber                // simple number, including imaginary
+	itemPipe                  // pipe symbol
+	itemRawString             // raw quoted string (includes quotes)
+	itemRightDelim            // right action delimiter
+	itemRightParen            // ')' inside action
+	itemSpace                 // run of spaces separating arguments
+	itemString                // quoted string (includes quotes)
+	itemText                  // plain text
+	itemVariable              // variable starting with '$', such as '$' or  '$1' or '$hello'
+	itemRegex                 // regex surrounded by `/`
+	itemOperator              // catchall for <=, +, >>, etc
+	itemQuote                 // A quoted string
+	itemComment               // A comment, starting with '#'
+	itemBuiltinFunc           // A built-in function
+	itemFunc                  // A custom function
+	itemNewline               // A newline
+
+	// Fancy multi-char operators
+	itemModAssign
+	itemDivAssign
+	itemMulAssign
+	itemAddAssign
+	itemSubAssign
+	itemPowAssign
+
+	itemIncrement
+	itemDecrement
+
+	itemGreaterEqual
+	itemLesserEqual
+	itemDoubleEqual
+	itemNotEqual
+
+	itemAnd
+	itemOr
+
+	itemNoMatch
+
+	itemFileAppend
+
 	// Keywords appear after all the rest.
 	itemKeyword  // used only to delimit the keywords
 	itemBlock    // block keyword
@@ -92,6 +122,30 @@ var key = map[string]itemType{
 	"END":      itemEnd,
 }
 
+var builtinFuncs = map[string]int{
+	"atan2":   0,
+	"close":   0,
+	"cos":     0,
+	"exp":     0,
+	"gsub":    0,
+	"index":   0,
+	"int":     0,
+	"length":  0,
+	"log":     0,
+	"match":   0,
+	"rand":    0,
+	"sin":     0,
+	"split":   0,
+	"sprintf": 0,
+	"sqrt":    0,
+	"srand":   0,
+	"sub":     0,
+	"substr":  0,
+	"system":  0,
+	"tolower": 0,
+	"toupper": 0,
+}
+
 const eof = -1
 
 // Trimming spaces.
@@ -114,17 +168,19 @@ type stateFn func(*lexer) stateFn
 
 // lexer holds the state of the scanner.
 type lexer struct {
-	name       string    // the name of the input; used only for error reports
-	input      string    // the string being scanned
-	leftDelim  string    // start of action
-	rightDelim string    // end of action
-	state      stateFn   // the next lexing function to enter
-	pos        Pos       // current position in the input
-	start      Pos       // start position of this item
-	width      Pos       // width of last rune read from input
-	lastPos    Pos       // position of most recent item returned by nextItem
-	items      chan item // channel of scanned items
-	parenDepth int       // nesting depth of ( ) exprs
+	name         string    // the name of the input; used only for error reports
+	input        string    // the string being scanned
+	leftDelim    string    // start of action
+	rightDelim   string    // end of action
+	parserErrors int       // How many parser errors were encountered (usually 0 or 1)
+	logger       io.Writer // Where to write logs to
+	state        stateFn   // the next lexing function to enter
+	pos          Pos       // current position in the input
+	start        Pos       // start position of this item
+	width        Pos       // width of last rune read from input
+	lastPos      Pos       // position of most recent item returned by nextItem
+	items        chan item // channel of scanned items
+	parenDepth   int       // nesting depth of ( ) exprs
 }
 
 // next returns the next rune in the input.
@@ -205,9 +261,12 @@ func (l *lexer) errorf(format string, args ...interface{}) stateFn {
 // nextItem returns the next item from the input.
 // Called by the parser, not in the lexing goroutine.
 func (l *lexer) nextItem() item {
-	item := <-l.items
-	l.lastPos = item.pos
-	return item
+	it, ok := <-l.items
+	if !ok {
+		return item{itemEOF, l.pos, "EOF"}
+	}
+	l.lastPos = it.pos
+	return it
 }
 
 // drain drains the output so the lexing goroutine will exit.
@@ -218,10 +277,11 @@ func (l *lexer) drain() {
 }
 
 // lex creates a new scanner for the input string.
-func lex(input string) *lexer {
+func lex(input string, logger io.Writer) *lexer {
 	l := &lexer{
-		input: input,
-		items: make(chan item),
+		input:  input,
+		logger: logger,
+		items:  make(chan item),
 	}
 	go l.run()
 	return l
@@ -232,7 +292,6 @@ func (l *lexer) run() {
 	for l.state = lexPattern; l.state != nil; {
 		l.state = l.state(l)
 	}
-	l.emit(itemEOF)
 	close(l.items)
 }
 
@@ -253,22 +312,8 @@ const (
 )
 
 func lexPattern(l *lexer) stateFn {
-	r := l.next()
-	switch {
-	case isSpace(r):
-		l.ignore()
-	case r == '{':
-		l.emit(itemLeftDelim)
-		return lexRule
-	case r == eof:
-		return nil
-		//case isAlphaNumeric(r):
-		//l.backup()
-		//return lexIdentifier
-	case r == '/':
-		return l.tilNilThen(lexRegex, lexPattern)
-	}
-	return lexPattern
+	l.lookForRegex()
+	return lexRule
 }
 
 // Lexes a 'rule' - what to do with lines that match a pattern
@@ -285,38 +330,107 @@ func lexRule(l *lexer) stateFn {
 	}
 
 	switch r {
-	case '\\': //Skip literal backslash, consume next item
-		l.next()
 
 	case '"':
 		l.consumeUntil(`"`)
-		l.emit(itemQuote)
+		l.emit(itemRawString)
 
+	case '{':
+		l.emit('{')
 	case '}':
-		l.emit(itemRightDelim)
+		l.emit('}')
 		return lexPattern
 
-	case ';':
-		l.emit(itemChar)
+	// Simple single-char tokens
+	case ';', '?', ':', ',', '(', ')':
+		l.emit(itemType(r))
+
+	case '#':
+		l.consumeUntil("\n")
+		l.backup()
+		l.emit(itemComment)
+
+	case '\n':
+		l.emit(itemNewline)
 
 	case eof:
 		return nil
 
 	case '$':
-		l.acceptAlphaNumeric()
-		l.emit(itemField)
+		l.emit('$')
 
-	// TODO: Does this need broken up?
-	case '+', '-', '*', '/', '%', '^':
-		l.accept("-+=")
-		l.emit(itemOperator)
+	case '%':
+		l.emit2Char(map[rune]itemType{
+			'=': itemModAssign,
+		})
+	case '+':
+		l.emit2Char(map[rune]itemType{
+			'+': itemIncrement,
+			'=': itemAddAssign,
+		})
+	case '-':
+		l.emit2Char(map[rune]itemType{
+			'-': itemDecrement,
+			'=': itemSubAssign,
+		})
+
+	case '*':
+		l.emit2Char(map[rune]itemType{
+			'=': itemMulAssign,
+		})
+
+	case '/':
+		l.emit2Char(map[rune]itemType{
+			'=': itemDivAssign,
+		})
+
+	case '^':
+		l.emit2Char(map[rune]itemType{
+			'=': itemPowAssign,
+		})
 
 	case '>':
-		l.accept(">=")
-		l.emit(itemOperator)
+		l.emit2Char(map[rune]itemType{
+			'>': itemFileAppend,
+			'=': itemGreaterEqual,
+		})
 	case '<':
-		l.accept("<=")
-		l.emit(itemOperator)
+		l.emit2Char(map[rune]itemType{
+			'=': itemLesserEqual,
+		})
+
+	case '=':
+		l.emit2Char(map[rune]itemType{
+			'=': itemDoubleEqual,
+		})
+
+	case '&':
+		if l.next() == '&' {
+			l.emit(itemAnd)
+		} else {
+			l.errorf("& is only allowed as &&")
+		}
+	case '|':
+		if l.next() == '|' {
+			l.emit(itemOr)
+		} else {
+			l.errorf("| is only allowed as ||")
+		}
+
+	case '!':
+		switch l.next() {
+		case '=':
+			l.emit(itemNotEqual)
+		case '~':
+			l.emit(itemNoMatch)
+			l.lookForRegex()
+		default:
+			l.backup()
+		}
+
+	case '~':
+		l.emit('~')
+		l.lookForRegex()
 
 	default:
 		l.emit(itemChar)
@@ -330,6 +444,37 @@ func lexRegex(l *lexer) stateFn {
 	l.consumeUntil("/")
 	l.emit(itemRegex)
 	return nil
+}
+
+func (l *lexer) lookForRegex() {
+	for {
+		r := l.next()
+		switch r {
+		case ' ', '\t':
+			l.ignore()
+		case '\n':
+			l.emit(itemNewline)
+		case '/':
+			l.consumeUntil("/")
+			l.emit(itemRegex)
+			return
+
+		default:
+			l.backup()
+			return
+		}
+	}
+}
+
+func (l *lexer) emit2Char(m map[rune]itemType) {
+	if val, ok := m[l.next()]; ok {
+		l.emit(val)
+		return
+	}
+	l.backup()
+
+	r, _ := utf8.DecodeRuneInString(l.input[l.start:])
+	l.emit(itemType(r))
 }
 
 func (l *lexer) consumeUntil(terms string) {
@@ -550,6 +695,15 @@ Loop:
 			if !l.atTerminator() {
 				return l.errorf("bad character %#U", r)
 			}
+			// Following paren means it's a function name
+			if l.peek() == '(' {
+				if _, in := builtinFuncs[word]; in {
+					l.emit(itemBuiltinFunc)
+					return lexRule
+				}
+				l.emit(itemFunc)
+				return lexRule
+			}
 			switch {
 			case key[word] > itemKeyword:
 				l.emit(key[word])
@@ -621,7 +775,7 @@ func (l *lexer) atTerminator() bool {
 		return true
 	}
 	switch r {
-	case eof, '.', ',', '|', ':', ')', '(', '}', ';':
+	case eof, '.', ',', '|', ':', ')', '(', '{', '}', ';', '%', '+', '-', '*', '/', '<', '>', '=':
 		return true
 	}
 	// Does r start the delimiter? This can be ambiguous (with delim=="//", $x/2 will
@@ -750,4 +904,9 @@ func isEndOfLine(r rune) bool {
 // isAlphaNumeric reports whether r is an alphabetic, digit, or underscore.
 func isAlphaNumeric(r rune) bool {
 	return r == '_' || unicode.IsLetter(r) || unicode.IsDigit(r)
+}
+
+func (l *lexer) Error(s string) {
+	l.parserErrors++
+	fmt.Fprintf(l.logger, "Parser error: %s\n", s)
 }
