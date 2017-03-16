@@ -39,6 +39,14 @@ func (i item) String() string {
 // itemType identifies the type of lex items.
 type itemType int
 
+func (i item) isExpressionTerminator() bool {
+	switch i.typ {
+	case '{', ';', itemEOF, itemNewline:
+		return true
+	}
+	return false
+}
+
 const (
 	itemEOF          itemType = iota + 1000
 	itemError                 // error occurred; value is text of error
