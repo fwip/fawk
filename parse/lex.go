@@ -41,7 +41,7 @@ type itemType int
 
 func (i item) isExpressionTerminator() bool {
 	switch i.typ {
-	case '{', ';', itemEOF, itemNewline:
+	case ',', '}', '{', ';', itemEOF, itemNewline:
 		return true
 	}
 	return false

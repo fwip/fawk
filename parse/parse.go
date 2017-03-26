@@ -4,7 +4,23 @@ import (
 	"fmt"
 	"os"
 	"strings"
+
+	"github.com/fatih/color"
 )
+
+var colors = []func(format string, a ...interface{}) string{
+	color.RedString,
+	color.MagentaString,
+	color.BlueString,
+	color.CyanString,
+	color.GreenString,
+}
+
+var colorlevel = -1
+
+func init() {
+	color.NoColor = false
+}
 
 // A Node is an element of an AST
 type Node interface {
@@ -53,7 +69,6 @@ func (r *rule) String() string {
 	if r == nil {
 		return "{ print }"
 	}
-	fmt.Println("Printing a rule...")
 	return r.pattern.String() + "{" + r.action.String() + "}"
 }
 
@@ -78,7 +93,6 @@ func (p *parser) parse() error {
 
 	for p.next(); p.curToken.typ != itemEOF; {
 		program.rules = append(program.rules, p.parseRule())
-		fmt.Println("rule added")
 	}
 	p.root = &program
 	return nil
@@ -90,7 +104,6 @@ func (p *parser) next() {
 	}
 	p.curToken = p.peekToken
 	p.peekToken = p.lexer.nextItem()
-	fmt.Println("Reading next...", p.curToken, p.peekToken)
 }
 
 func (p *parser) peekError(t itemType) {
@@ -120,7 +133,9 @@ func (p *parser) parsePattern() Node {
 	switch p.curToken.typ {
 
 	case itemBegin, itemEnd:
-		return &simpleNode{p.curToken}
+		curToken := p.curToken
+		p.next()
+		return &simpleNode{curToken}
 	case '{':
 		return emptyNode{}
 
@@ -167,6 +182,21 @@ func (e *expression) String() string {
 	return e.token.String() + " " + e.nextExpression.String()
 }
 
+type printStatement struct {
+	printToken item
+	arguments  []Node
+}
+
+func (ps *printStatement) String() string {
+	out := "PRINT: "
+	var args []string
+	for _, n := range ps.arguments {
+		args = append(args, n.String())
+	}
+	out += strings.Join(args, ", ")
+	return out + " ENDPRINT"
+}
+
 type statementList []Node
 
 func (sl statementList) String() string {
@@ -178,12 +208,41 @@ func (sl statementList) String() string {
 	return strings.Join(lines, "\n")
 }
 
+func (p *parser) atEOF() bool {
+	return p.curToken.typ == itemEOF
+}
+
+func (p *parser) parsePrint() Node {
+	ps := printStatement{
+		printToken: p.curToken,
+	}
+	for !p.peekToken.isExpressionTerminator() {
+		//fmt.Println("parser:", p)
+		p.next()
+		ps.arguments = append(ps.arguments, p.parseExpression(-1))
+		if p.peekToken.typ == ',' {
+			p.next()
+		}
+	}
+	return &ps
+}
+
 func (p *parser) parseStatements() Node {
 	var statements statementList
 
 	for p.peekToken.typ != '}' {
-		statements = append(statements, p.parseExpression(-1))
-		//p.next()
+		var n Node
+		switch p.curToken.typ {
+		case itemPrint:
+			n = p.parsePrint()
+
+		default:
+			n = p.parseExpression(-1)
+		}
+		statements = append(statements, n)
+		if p.atEOF() {
+			panic(" Reached EOF!")
+		}
 	}
 	//node := simpleNode{p.curToken}
 	p.next()
@@ -191,13 +250,13 @@ func (p *parser) parseStatements() Node {
 }
 
 func (p *parser) peekPrecedence() int {
-	return precedence(p.peekToken.typ)
+	return precedenceOf(p.peekToken.typ)
 }
 func (p *parser) curPrecedence() int {
-	return precedence(p.curToken.typ)
+	return precedenceOf(p.curToken.typ)
 }
 
-func precedence(typ itemType) int {
+func precedenceOf(typ itemType) int {
 	switch typ {
 	case '=', itemAddAssign, itemSubAssign, itemMulAssign, itemDivAssign, itemModAssign, itemPowAssign:
 		return 2
@@ -237,8 +296,23 @@ type infix struct {
 }
 
 func (ifx *infix) String() string {
-	return fmt.Sprintf("( %s ) %s ( %s )", ifx.left.String(), ifx.operator, ifx.right.String())
-	//return "(" + ifx.left.String() + ifx.operator + ifx.right.String()
+	colorlevel++
+	colorf := colors[colorlevel%len(colors)]
+	lb := colorf("❰")
+	rb := colorf("❱")
+	op := colorf(ifx.operator)
+	str := lb + ifx.left.String() + rb + " " + op + " " + lb + ifx.right.String() + rb
+	colorlevel--
+	return str
+}
+
+type prefixExpression struct {
+	prefix item
+	right  Node
+}
+
+func (pe *prefixExpression) String() string {
+	return pe.prefix.val + pe.right.String()
 }
 
 func (p *parser) parseInfixExpression(left Node) Node {
@@ -250,7 +324,6 @@ func (p *parser) parseInfixExpression(left Node) Node {
 	precedence := p.curPrecedence()
 	p.next()
 	expression.right = p.parseExpression(precedence)
-	fmt.Println("Returning: ", expression.String())
 	return &expression
 }
 
@@ -262,8 +335,17 @@ func (p *parser) parseExpression(precedence int) Node {
 	//}
 	//switch p.curToken.typ {
 	//case itemIdentifier:
-	var leftExp Node
-	leftExp = (Node)(&simpleNode{p.curToken})
+	switch p.curToken.typ {
+	case '$':
+		token := p.curToken
+		p.next()
+		return &prefixExpression{
+			prefix: token,
+			right:  p.parseExpression(precedenceOf('$')),
+		}
+	}
+
+	leftExp := (Node)(&simpleNode{p.curToken})
 
 	for !p.peekToken.isExpressionTerminator() && precedence < p.peekPrecedence() {
 		p.next()
