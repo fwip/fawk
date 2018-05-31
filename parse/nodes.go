@@ -1,8 +1,10 @@
 package parse
 
 import (
-	"github.com/fatih/color"
+	"fmt"
 	"strings"
+
+	"github.com/fatih/color"
 )
 
 var colors = []func(format string, a ...interface{}) string{
@@ -19,16 +21,20 @@ func init() {
 	color.NoColor = false
 }
 
+// Node represents any logical unit of the awk expression
+// It must implement two methods, String() and ToGo()
 type Node interface {
 	String() string
 	//RawValue() string
 	//Position() Pos
 	//Type() itemType
 	//Children() []Node
+	ToGo() string
 }
 type emptyNode struct{}
 
 func (e emptyNode) String() string { return "" }
+func (e emptyNode) ToGo() string   { return "" }
 
 type simpleNode struct{ item item }
 
@@ -38,6 +44,8 @@ func (n *simpleNode) String() string {
 	}
 	return n.item.val
 }
+
+func (n *simpleNode) ToGo() string { return "" }
 
 type program struct {
 	rules []rule
@@ -50,6 +58,9 @@ func (p *program) String() (out string) {
 		lines = append(lines, rule.String())
 	}
 	return strings.Join(lines, "\n")
+}
+func (p *program) ToGo() (out string) {
+	return "package main"
 }
 
 type rule struct {
@@ -88,6 +99,10 @@ func (ps *printStatement) String() string {
 	return out + " ENDPRINT"
 }
 
+func (ps *printStatement) ToGo() string {
+	return fmt.Sprintf("fmt.println( %s )", ps.arguments)
+}
+
 type statementList []Node
 
 func (sl statementList) String() string {
@@ -95,6 +110,14 @@ func (sl statementList) String() string {
 
 	for _, statement := range sl {
 		lines = append(lines, statement.String())
+	}
+	return strings.Join(lines, "\n")
+}
+
+func (sl statementList) ToGo() string {
+	var lines []string
+	for _, statement := range sl {
+		lines = append(lines, statement.ToGo())
 	}
 	return strings.Join(lines, "\n")
 }
@@ -117,6 +140,14 @@ func (ifx *infix) String() string {
 	return str
 }
 
+func (ifx *infix) ToGo() string {
+	switch ifx.operator {
+
+	default:
+		return ifx.left.ToGo() + " " + ifx.operator + " " + ifx.right.ToGo()
+	}
+}
+
 type prefixExpression struct {
 	prefix item
 	right  Node
@@ -124,4 +155,11 @@ type prefixExpression struct {
 
 func (pe *prefixExpression) String() string {
 	return pe.prefix.val + pe.right.String()
+}
+
+func (pe *prefixExpression) ToGo() string {
+	switch pe.prefix {
+	default:
+		return pe.prefix.val + " " + pe.right.ToGo()
+	}
 }

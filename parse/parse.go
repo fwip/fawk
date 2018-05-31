@@ -5,7 +5,8 @@ import (
 	"os"
 )
 
-type parser struct {
+// Parser is a struct that knows how to parse awk :)
+type Parser struct {
 	root      Node
 	lexer     *lexer
 	curToken  item
@@ -19,7 +20,7 @@ type parser struct {
 //type prefixParseFn func() Node
 //type infixParseFn func(Node) Node
 
-func (p *parser) parse() error {
+func (p *Parser) parse() error {
 
 	p.next()
 	program := program{}
@@ -31,7 +32,7 @@ func (p *parser) parse() error {
 	return nil
 }
 
-func (p *parser) next() {
+func (p *Parser) next() {
 	if p.curToken.typ == itemEOF {
 		panic("Can't advance beyond the end of input")
 	}
@@ -39,13 +40,13 @@ func (p *parser) next() {
 	p.peekToken = p.lexer.nextItem()
 }
 
-func (p *parser) peekError(t itemType) {
-	msg := fmt.Errorf("expected next token to be %s, got %s instead",
+func (p *Parser) peekError(t itemType) {
+	msg := fmt.Errorf("expected next token to be %v, got %v instead",
 		t, p.peekToken.typ)
 	p.errors = append(p.errors, msg)
 }
 
-func (p *parser) expectToken(typ itemType) bool {
+func (p *Parser) expectToken(typ itemType) bool {
 	if p.peekToken.typ == typ {
 		p.next()
 		return true
@@ -54,7 +55,7 @@ func (p *parser) expectToken(typ itemType) bool {
 	return false
 }
 
-func (p *parser) parseRule() rule {
+func (p *Parser) parseRule() rule {
 	rule := rule{}
 	rule.pattern = p.parsePattern()
 	rule.action = p.parseAction()
@@ -62,7 +63,7 @@ func (p *parser) parseRule() rule {
 	return rule
 }
 
-func (p *parser) parsePattern() Node {
+func (p *Parser) parsePattern() Node {
 	switch p.curToken.typ {
 
 	case itemBegin, itemEnd:
@@ -88,7 +89,7 @@ func (p *parser) parsePattern() Node {
 	//return emptyNode{}
 }
 
-func (p *parser) parseAction() Node {
+func (p *Parser) parseAction() Node {
 	if p.curToken.typ == itemEOF {
 		return emptyNode{}
 	}
@@ -106,11 +107,11 @@ func (p *parser) parseAction() Node {
 	return statements
 }
 
-func (p *parser) atEOF() bool {
+func (p *Parser) atEOF() bool {
 	return p.curToken.typ == itemEOF
 }
 
-func (p *parser) parsePrint() Node {
+func (p *Parser) parsePrint() Node {
 	ps := printStatement{
 		printToken: p.curToken,
 	}
@@ -125,7 +126,7 @@ func (p *parser) parsePrint() Node {
 	return &ps
 }
 
-func (p *parser) parseStatements() Node {
+func (p *Parser) parseStatements() Node {
 	var statements statementList
 
 	for p.peekToken.typ != '}' {
@@ -147,10 +148,10 @@ func (p *parser) parseStatements() Node {
 	return statements
 }
 
-func (p *parser) peekPrecedence() int {
+func (p *Parser) peekPrecedence() int {
 	return precedenceOf(p.peekToken.typ)
 }
-func (p *parser) curPrecedence() int {
+func (p *Parser) curPrecedence() int {
 	return precedenceOf(p.curToken.typ)
 }
 
@@ -186,7 +187,7 @@ func precedenceOf(typ itemType) int {
 
 }
 
-func (p *parser) parseInfixExpression(left Node) Node {
+func (p *Parser) parseInfixExpression(left Node) Node {
 	expression := infix{
 		token:    p.curToken,
 		operator: p.curToken.val,
@@ -198,7 +199,7 @@ func (p *parser) parseInfixExpression(left Node) Node {
 	return &expression
 }
 
-func (p *parser) parseExpression(precedence int) Node {
+func (p *Parser) parseExpression(precedence int) Node {
 
 	//prefix := p.prefixParseFns[p.curToken.typ]
 	//if prefix == nil {
@@ -227,9 +228,9 @@ func (p *parser) parseExpression(precedence int) Node {
 	return leftExp
 }
 
-// Make a new parser
-func New(l *lexer) *parser {
-	p := parser{lexer: l}
+// New returns a new parser with the given lexer
+func New(l *lexer) *Parser {
+	p := Parser{lexer: l}
 	//p.prefixParseFns = make(map[itemType]prefixParseFn)
 	//p.infixParseFns = make(map[itemType]infixParseFn)
 
