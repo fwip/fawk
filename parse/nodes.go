@@ -33,8 +33,8 @@ type Node interface {
 }
 type emptyNode struct{}
 
-func (e emptyNode) String() string { return "" }
-func (e emptyNode) ToGo() string   { return "" }
+func (e emptyNode) String() string { return "<empty>" }
+func (e emptyNode) ToGo() string   { return "true" }
 
 type simpleNode struct{ item item }
 
@@ -45,7 +45,9 @@ func (n *simpleNode) String() string {
 	return n.item.val
 }
 
-func (n *simpleNode) ToGo() string { return "" }
+func (n *simpleNode) ToGo() string {
+	return n.item.val
+}
 
 type program struct {
 	rules []rule
@@ -60,7 +62,36 @@ func (p *program) String() (out string) {
 	return strings.Join(lines, "\n")
 }
 func (p *program) ToGo() (out string) {
-	return "package main"
+	var ruleCodes []string
+	for _, rule := range p.rules {
+		ruleCodes = append(ruleCodes, rule.ToGo())
+	}
+	return fmt.Sprintf(`package main
+
+		import "bufio"
+		import "fmt"
+		import "os"
+		import "strings"
+
+		func main () {
+			scanner := bufio.NewScanner(os.Stdin)
+
+			for scanner.Scan(){
+				line := scanner.Text()
+				var fields []string
+				fields = append(fields, line)
+				fields = append(fields, strings.Fields(line)...)
+
+				// Custom rules goes here
+				%s
+				// End custom code
+			}
+			if err := scanner.Err(); err != nil {
+				fmt.Fprintln(os.Stderr, "error:", err)
+				os.Exit(1)
+			}
+		}
+		`, strings.Join(ruleCodes, "\n\n"))
 }
 
 type rule struct {
@@ -73,6 +104,14 @@ func (r *rule) String() string {
 		return "{ print }"
 	}
 	return r.pattern.String() + "{" + r.action.String() + "}"
+}
+
+func (r *rule) ToGo() string {
+	return fmt.Sprintf(`
+		if (%s) {
+			%s
+		} 
+		`, r.pattern.ToGo(), r.action.ToGo())
 }
 
 type expression struct {
@@ -100,7 +139,11 @@ func (ps *printStatement) String() string {
 }
 
 func (ps *printStatement) ToGo() string {
-	return fmt.Sprintf("fmt.println( %s )", ps.arguments)
+	var arguments []string
+	for _, arg := range ps.arguments {
+		arguments = append(arguments, arg.ToGo())
+	}
+	return fmt.Sprintf("fmt.Println( %s )", strings.Join(arguments, ", "))
 }
 
 type statementList []Node
@@ -158,7 +201,9 @@ func (pe *prefixExpression) String() string {
 }
 
 func (pe *prefixExpression) ToGo() string {
-	switch pe.prefix {
+	switch {
+	case pe.prefix.val == "$":
+		return fmt.Sprintf("fields[ %s ]", pe.right.ToGo())
 	default:
 		return pe.prefix.val + " " + pe.right.ToGo()
 	}

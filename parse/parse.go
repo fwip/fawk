@@ -243,12 +243,12 @@ func Parse(input string) Node {
 
 	lexer := lex(input, os.Stderr)
 
-	fmt.Println("Going to parse:", input)
+	// fmt.Println("Going to parse:", input)
 
 	p := New(lexer)
 	p.parse()
 
-	fmt.Println("AST:\n", p.root)
+	// fmt.Println("AST:\n", p.root)
 
 	return p.root
 }
